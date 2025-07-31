@@ -1,0 +1,28 @@
+.postInteractions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.interactionIcons {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.interactionIcons img, .interactionIcons svg {
+  cursor: pointer;
+}
+
+.postInteractions button {
+  background-color: rgba(238, 55, 55, 0.895);
+  color: white;
+  border-radius: 24px;
+  padding: 12px;
+  font-weight: bold;
+  cursor: pointer;
+  border: none;
+}
+
+.postInteractions button:hover {
+  background-color: rgba(190, 18, 18, 0.874);
+}

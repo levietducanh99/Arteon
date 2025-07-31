@@ -1,0 +1,81 @@
+.galleryItem {
+  display: flex;
+  position: relative;
+  cursor: pointer;
+}
+
+.galleryItem img {
+  width: 100%;
+  object-fit: cover;
+  border-radius: 16px;
+}
+
+.overlay,
+.saveButton,
+.overlayIcons {
+  display: none;
+}
+
+.overlayIcons {
+  position: absolute;
+  bottom: 16px;
+  right: 16px;
+  align-items: center;
+  gap: 8px;
+}
+
+.overlayIcons button img {
+  width: 20px;
+  height: 20px;
+}
+
+.galleryItem:hover .overlay {
+  display: flex;
+  border-radius: 16px;
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  top: 0;
+  left: 0;
+  background-color: rgba(0, 0, 0, 0.279);
+}
+
+.galleryItem:hover .saveButton {
+  display: block;
+  background-color: rgb(192, 35, 35);
+  color: rgb(239, 239, 239);
+  padding: 16px 12px;
+  width: max-content;
+  border-radius: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  border: none;
+}
+
+.galleryItem:hover .overlayIcons {
+  display: flex;
+  position: absolute;
+  bottom: 16px;
+  right: 16px;
+  gap: 8px;
+}
+
+.overlayIcons button {
+  width: 32px;
+  height: 32px;
+  border-radius: 100%;
+  background-color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  cursor: pointer;
+}
+
+.overlay button img {
+  width: 10px;
+  gap: 10px;
+}
