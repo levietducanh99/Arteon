@@ -2,6 +2,15 @@
   display: flex;
   position: relative;
   cursor: pointer;
+  border-radius: 16px;
+  overflow: hidden;
+  transition: transform 0.2s ease;
+}
+
+
+
+.galleryItem:hover  {
+  transform: scale(1.02);
 }
 
 .galleryItem img {
@@ -10,27 +19,148 @@
   border-radius: 16px;
 }
 
-.overlay,
+.overlay {
+  display: block;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  z-index: 10;
+}
+
 .saveButton,
 .overlayIcons {
   display: none;
 }
 
+.pinInfo {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.7));
+  padding: 16px 12px 12px;
+  z-index: 1;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.galleryItem:hover .pinInfo {
+  opacity: 1;
+}
+
+.pinTitle {
+  color: white;
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0 0 8px 0;
+  line-height: 1.3;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pinVault {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.vaultLabel {
+  font-weight: 500;
+  color: #4CAF50;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+.vaultAddress {
+  font-family: 'Courier New', monospace;
+  background: rgba(255, 255, 255, 0.15);
+  padding: 2px 6px;
+  border-radius: 4px;
+  backdrop-filter: blur(4px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.vaultAddress:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.vaultStatus {
+  color: #4CAF50;
+  font-weight: bold;
+  font-size: 12px;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+.saveButton {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  background: rgba(255, 255, 255, 0.9);
+  border: none;
+  border-radius: 24px;
+  padding: 8px 16px;
+  font-weight: 600;
+  cursor: pointer;
+  z-index: 99;
+  opacity: 0;
+  transition: all 0.3s ease;
+  font-size: 14px;
+}
+
+.galleryItem:hover .saveButton {
+  opacity: 1;
+}
+
+.saveButton:hover {
+  background: white;
+  transform: scale(1.05);
+}
+
 .overlayIcons {
   position: absolute;
-  bottom: 16px;
-  right: 16px;
-  align-items: center;
+  top: 12px;
+  left: 12px;
+  display: flex;
   gap: 8px;
+  z-index: 4;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.galleryItem:hover .overlayIcons {
+  opacity: 1;
+}
+
+.overlayIcons button {
+  background: rgba(255, 255, 255, 0.9);
+  border: none;
+  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.overlayIcons button:hover {
+  background: white;
+  transform: scale(1.1);
 }
 
 .overlayIcons button img {
-  width: 20px;
-  height: 20px;
+  width: 16px;
+  height: 16px;
 }
 
 .galleryItem:hover .overlay {
   display: flex;
+  opacity: 1;
   border-radius: 16px;
   position: absolute;
   width: 100%;
@@ -63,19 +193,13 @@
   gap: 8px;
 }
 
-.overlayIcons button {
-  width: 32px;
-  height: 32px;
-  border-radius: 100%;
-  background-color: white;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  cursor: pointer;
+/* Gallery Item Link - Remove default link styling */
+.galleryItemLink {
+  text-decoration: none;
+  color: inherit;
+  display: block;
 }
 
-.overlay button img {
-  width: 10px;
-  gap: 10px;
+.galleryItemLink:hover {
+  text-decoration: none;
 }
