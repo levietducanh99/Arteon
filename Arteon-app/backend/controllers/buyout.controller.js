@@ -204,6 +204,49 @@ class BuyoutController {
         // Expected error if offer doesn't exist yet
       }
 
+      // Check if there's already a database record for this PDA
+      let existingOffer;
+      try {
+        existingOffer = await BuyoutOffer.findOne({ buyoutOfferPDA: buyoutOfferPDA.toString() });
+        if (existingOffer) {
+          // If offer exists and is still pending, update it instead of creating new one
+          if (existingOffer.status === 'pending') {
+            console.log('📝 Updating existing buyout offer...');
+
+            existingOffer.offerAmount = offerLamports.toString();
+            existingOffer.offerAmountSOL = offerLamports / 1000000000;
+            existingOffer.buyerNote = req.body.buyerNote || '';
+            existingOffer.updatedAt = new Date();
+
+            await existingOffer.save();
+
+            return res.json({
+              success: true,
+              signature: `updated_${Date.now()}`,
+              data: {
+                vault: vaultAddress,
+                buyer: buyer.publicKey.toString(),
+                offerAmount: offerLamports,
+                offerAmountSOL: offerLamports / 1000000000,
+                buyoutOfferPDA: buyoutOfferPDA.toString(),
+                offerId: existingOffer._id,
+                status: 'pending',
+                createdAt: existingOffer.createdAt,
+                updatedAt: existingOffer.updatedAt,
+                action: 'updated'
+              }
+            });
+          } else {
+            return res.status(400).json({
+              success: false,
+              message: `Buyer already has a ${existingOffer.status} offer for this vault. Cannot create new offer.`
+            });
+          }
+        }
+      } catch (dbCheckError) {
+        console.warn('⚠️ Error checking existing offer:', dbCheckError.message);
+      }
+
       // Create provider with buyer as signer
       const buyerWallet = new anchor.Wallet(buyer);
       const buyerProvider = new anchor.AnchorProvider(this.connection, buyerWallet, {

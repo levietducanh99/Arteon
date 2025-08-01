@@ -2,7 +2,7 @@ import { Link, useParams } from "react-router";
 import Image from "../../components/image/image";
 import { PostInteraction } from "../../components/PostInteraction/PostInteraction";
 import "./PostPage.css";
-import { IconArrowBack, IconCopy, IconCheck, IconCoins, IconCurrencyDollar } from "@tabler/icons-react";
+import { IconArrowBack, IconCopy, IconCheck, IconCoins, IconCurrencyDollar, IconEye } from "@tabler/icons-react";
 import { Comments } from "../../components/Comments/Comments";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -13,6 +13,7 @@ const PostPage = () => {
   const [copied, setCopied] = useState(false);
   const [fractionalizingLoading, setFractionalizingLoading] = useState(false);
   const [showBuyOfferModal, setShowBuyOfferModal] = useState(false);
+  const [showBuyoutOffersModal, setShowBuyoutOffersModal] = useState(false);
   const [offerAmount, setOfferAmount] = useState("");
   const [buyOfferLoading, setBuyOfferLoading] = useState(false);
   const queryClient = useQueryClient();
@@ -31,6 +32,21 @@ const PostPage = () => {
     enabled: !!data, // Chỉ cần data pin đã load
     retry: false,
     // Xử lý error 404 như là trạng thái bình thường (pin chưa fractionalized)
+    throwOnError: false
+  });
+
+  // Cải thiện logic kiểm tra trạng thái fractionalized và thêm debug logging để theo dõi dữ liệu
+  // Ưu tiên dữ liệu từ API fractionalization nếu có
+  const hasFreactionalizationData = fractionalizationData?.success && fractionalizationData?.data;
+  const isAlreadyFractionalized = hasFreactionalizationData || data?.isFractionalized || data?.vaultStatus?.isFractionalized || false;
+  const fractionalizationInfo = fractionalizationData?.success ? fractionalizationData.data : null;
+
+  // Query để lấy tất cả buyout offers cho vault này
+  const { data: buyoutOffersData, isLoading: buyoutOffersLoading, error: buyoutOffersError } = useQuery({
+    queryKey: ["buyout-offers", data?.publicKey],
+    queryFn: () => apiRequest.get(`/buyout/vault/${data.publicKey}/offers`).then((res) => res.data),
+    enabled: Boolean(data?.publicKey && isAlreadyFractionalized),
+    retry: false,
     throwOnError: false
   });
 
@@ -105,12 +121,6 @@ const PostPage = () => {
     }
   };
 
-  // Cải thiện logic kiểm tra trạng thái fractionalized và thêm debug logging để theo dõi dữ liệu
-  // Ưu tiên dữ liệu từ API fractionalization nếu có
-  const hasFreactionalizationData = fractionalizationData?.success && fractionalizationData?.data;
-  const isAlreadyFractionalized = hasFreactionalizationData || data?.isFractionalized || data?.vaultStatus?.isFractionalized || false;
-  const fractionalizationInfo = fractionalizationData?.success ? fractionalizationData.data : null;
-
   // Debug logging để kiểm tra dữ liệu
   console.log('🔍 Debug info:', {
     pinId: id,
@@ -157,6 +167,20 @@ const PostPage = () => {
     setShowBuyOfferModal(true);
   };
 
+  const handleViewBuyoutOffers = () => {
+    if (!data.publicKey) {
+      alert('This pin does not have a vault associated with it.');
+      return;
+    }
+
+    if (!isAlreadyFractionalized) {
+      alert('Pin must be fractionalized to view buy offers.');
+      return;
+    }
+
+    setShowBuyoutOffersModal(true);
+  };
+
   const handleSubmitBuyOffer = () => {
     if (!offerAmount || isNaN(offerAmount) || parseFloat(offerAmount) <= 0) {
       alert('Please enter a valid offer amount in SOL.');
@@ -176,6 +200,14 @@ const PostPage = () => {
         offerLamports
       });
     }
+  };
+
+  const formatSOLAmount = (lamports) => {
+    return (lamports / 1000000000).toFixed(4);
+  };
+
+  const formatDate = (dateString) => {
+    return new Date(dateString).toLocaleString();
   };
 
   if (isPending) return "Loading ...";
@@ -223,6 +255,119 @@ const PostPage = () => {
                 disabled={buyOfferLoading || !offerAmount}
               >
                 {buyOfferLoading ? 'Creating Offer...' : 'Create Offer'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Buyout Offers View Modal */}
+      {showBuyoutOffersModal && (
+        <div className="modal-overlay" onClick={() => setShowBuyoutOffersModal(false)}>
+          <div className="modal-content buyout-offers-modal" onClick={(e) => e.stopPropagation()}>
+            <h3>All Buy Offers for this Artwork</h3>
+            <p>Pin: <strong>{data.title || 'Untitled'}</strong></p>
+            <p>Vault: <code>{data.publicKey}</code></p>
+
+            <div className="buyout-offers-container">
+              {buyoutOffersLoading && (
+                <div className="loading-state">
+                  <p>Loading buy offers...</p>
+                </div>
+              )}
+
+              {buyoutOffersError && (
+                <div className="error-state">
+                  <p>Error loading buy offers: {buyoutOffersError.message}</p>
+                </div>
+              )}
+
+              {buyoutOffersData && buyoutOffersData.success && (
+                <>
+                  <div className="offers-summary">
+                    <p><strong>Total Offers:</strong> {buyoutOffersData.data.totalOffers}</p>
+                    {buyoutOffersData.data.offers.length > 0 && (
+                      <p><strong>Highest Offer:</strong> {formatSOLAmount(Math.max(...buyoutOffersData.data.offers.map(offer => offer.offerAmount || 0)))} SOL</p>
+                    )}
+                  </div>
+
+                  {buyoutOffersData.data.offers.length === 0 ? (
+                    <div className="no-offers">
+                      <p>No buy offers have been made for this artwork yet.</p>
+                      <p>Be the first to make an offer!</p>
+                    </div>
+                  ) : (
+                    <div className="offers-list">
+                      {buyoutOffersData.data.offers
+                        .sort((a, b) => (b.offerAmount || 0) - (a.offerAmount || 0)) // Sort by amount descending
+                        .map((offer, index) => (
+                          <div key={offer._id || index} className="offer-item">
+                            <div className="offer-header">
+                              <div className="offer-amount">
+                                <span className="amount-sol">{formatSOLAmount(offer.offerAmount || 0)} SOL</span>
+                                <span className="amount-lamports">({(offer.offerAmount || 0).toLocaleString()} lamports)</span>
+                              </div>
+                              <div className="offer-status">
+                                <span className={`status-badge ${offer.status || 'pending'}`}>
+                                  {offer.status || 'Pending'}
+                                </span>
+                              </div>
+                            </div>
+
+                            <div className="offer-details">
+                              <div className="offer-field">
+                                <span className="field-label">Buyer:</span>
+                                <code className="buyer-address">{offer.buyerPublicKey || offer.buyer}</code>
+                              </div>
+
+                              {offer.buyerNote && (
+                                <div className="offer-field">
+                                  <span className="field-label">Note:</span>
+                                  <span className="buyer-note">&ldquo;{offer.buyerNote}&rdquo;</span>
+                                </div>
+                              )}
+
+                              <div className="offer-field">
+                                <span className="field-label">Created:</span>
+                                <span>{formatDate(offer.createdAt)}</span>
+                              </div>
+
+                              {offer.transactionSignature && (
+                                <div className="offer-field">
+                                  <span className="field-label">Transaction:</span>
+                                  <div className="transaction-link">
+                                    <code>{offer.transactionSignature}</code>
+                                    <button
+                                      className="copyButton"
+                                      onClick={() => copyToClipboard(offer.transactionSignature)}
+                                      title="Copy transaction signature"
+                                    >
+                                      <IconCopy size={14} />
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                    </div>
+                  )}
+                </>
+              )}
+
+              {buyoutOffersData && !buyoutOffersData.success && (
+                <div className="error-state">
+                  <p>Failed to load buy offers: {buyoutOffersData.message}</p>
+                </div>
+              )}
+            </div>
+
+            <div className="modal-actions">
+              <button
+                className="close-button"
+                onClick={() => setShowBuyoutOffersModal(false)}
+              >
+                Close
               </button>
             </div>
           </div>
@@ -396,7 +541,7 @@ const PostPage = () => {
                  isAlreadyFractionalized ? 'Already Fractionalized' : 'Fractionalize Vault'}
               </button>
 
-              {/* Buy Offer Button - chỉ hiển thị nếu đã fractionalized */}
+              {/* Buy Offer Button - chỉ hiển thị nếu đ�� fractionalized */}
               {isAlreadyFractionalized && (
                 <button
                   className="actionButton buyOfferButton"
@@ -405,6 +550,18 @@ const PostPage = () => {
                 >
                   <IconCurrencyDollar size={20} />
                   Create Buy Offer
+                </button>
+              )}
+
+              {/* View All Buy Offers Button - chỉ hiển thị nếu đã fractionalized */}
+              {isAlreadyFractionalized && (
+                <button
+                  className="actionButton viewOffersButton"
+                  onClick={handleViewBuyoutOffers}
+                  disabled={buyoutOffersLoading}
+                >
+                  <IconEye size={20} />
+                  {buyoutOffersLoading ? 'Loading...' : `View All Buy Offers ${buyoutOffersData?.data?.totalOffers ? `(${buyoutOffersData.data.totalOffers})` : ''}`}
                 </button>
               )}
 
