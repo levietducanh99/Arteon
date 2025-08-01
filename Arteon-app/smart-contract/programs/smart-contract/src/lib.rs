@@ -2,7 +2,7 @@ use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Mint, Token, TokenAccount, MintTo, mint_to};
 use anchor_spl::associated_token::AssociatedToken;
 
-declare_id!("6BoiezFL64ETgYVmNAE3w3di2qoQDEU6BMHt3Yqfe9XU");
+declare_id!("CRaskU2g9Wzenfm1s89z5LdDkgCoaMqo9dbHn7YXvTAY");
 
 #[program]
 pub mod smart_contract {
