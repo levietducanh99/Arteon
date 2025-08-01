@@ -92,7 +92,7 @@ export const getPin = async (req, res) => {
 };
 
 export const createPin = async (req, res) => {
-  const { title, description, link, tags, textOptions, canvasOptions, board } =
+  const { title, description, link, tags, textOptions, canvasOptions, board, price } =
     req.body;
   const media = req.files.media;
 
@@ -100,6 +100,16 @@ export const createPin = async (req, res) => {
     return res
       .status(400)
       .json({ message: "Title, description and media are required." });
+  }
+
+  // Validate price nếu có
+  if (price !== undefined && price !== null && price !== "") {
+    const priceNumber = parseFloat(price);
+    if (isNaN(priceNumber) || priceNumber < 0) {
+      return res
+        .status(400)
+        .json({ message: "Price must be a valid number >= 0 SOL." });
+    }
   }
 
   const parsedTextOptions = JSON.parse(textOptions || "{}");
@@ -160,7 +170,7 @@ export const createPin = async (req, res) => {
       console.log("ImageKit upload response:", response);
 
       try {
-        // T�����o Pin trước (không cần publicKey)
+        // Tạo Pin với price
         const newPin = await Pin.create({
           user: req.userId,
           title,
@@ -171,10 +181,13 @@ export const createPin = async (req, res) => {
           media: response.filePath,
           width: response.width,
           height: response.height,
-          // Không cần publicKey nữa vì đã không bắt buộc
+          price: price && price !== "" ? parseFloat(price) : null, // Lưu price nếu có
         });
 
         console.log("📝 Pin created with ID:", newPin._id.toString());
+        if (newPin.price) {
+          console.log("💰 Pin price:", newPin.price, "SOL");
+        }
 
         // Tạo metadata với số tăng dần dựa trên timestamp
         const timestamp = Date.now();

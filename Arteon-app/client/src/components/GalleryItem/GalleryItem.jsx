@@ -5,6 +5,10 @@ import Image from "../image/image";
 export const GalleryItem = ({ item }) => {
   const optimizedHeight = (372 * item.height) / item.width;
 
+  // Kiểm tra xem pin đã được fractionalized chưa
+  const isAlreadyFractionalized =
+    item.isFractionalized || item.vaultStatus?.isFractionalized || false;
+
   return (
     <div
       className="galleryItem"
@@ -18,10 +22,14 @@ export const GalleryItem = ({ item }) => {
       ></Image>
       <Link to={`/pin/${item._id}`} className="overlay"></Link>
 
-
       {/* Title and PublicKey overlay */}
       <div className="pinInfo">
         {item.title && <h3 className="pinTitle">{item.title}</h3>}
+        {item.price && (
+          <div className="pinPrice">
+            <span className="priceValue">{item.price} SOL</span>
+          </div>
+        )}
         {item.publicKey && (
           <div className="pinVault">
             <span className="vaultLabel">Vault:</span>
@@ -29,6 +37,11 @@ export const GalleryItem = ({ item }) => {
               {item.publicKey.slice(0, 4)}...{item.publicKey.slice(-4)}
             </span>
             {item.hasVault && <span className="vaultStatus">✓</span>}
+            {isAlreadyFractionalized && (
+              <span className="fractionalizationStatus" title="Fractionalized">
+                🪙
+              </span>
+            )}
           </div>
         )}
       </div>

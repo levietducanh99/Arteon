@@ -137,6 +137,20 @@ const CreatePage = () => {
               />
             </div>
             <div className="createFormItem">
+              <label htmlFor="price">Price (SOL)</label>
+              <input
+                type="number"
+                placeholder="e.g. 1.5 (optional)"
+                name="price"
+                id="price"
+                min="0"
+                step="0.1"
+              />
+              <small className="price-help">
+                Set a price for your artwork in SOL (optional)
+              </small>
+            </div>
+            <div className="createFormItem">
               <label htmlFor="board">Board</label>
               <select name="board" id="board">
                 <option value="">Choose a board</option>
@@ -149,11 +163,10 @@ const CreatePage = () => {
               <label htmlFor="tags">Tagged topics</label>
               <input
                 type="text"
-                placeholder="Searched for a tag"
+                placeholder="Add tags separated by commas"
                 name="tags"
                 id="tags"
               />
-              <small>Don&apos;t worry, people won&apos;t see your tag</small>
             </div>
           </form>
         </div>

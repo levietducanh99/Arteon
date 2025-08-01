@@ -49,6 +49,13 @@ const pinSchema = new Schema(
       type: String,
       required: true,
     },
+    price: {
+      type: Number,
+      required: false,
+      min: 0,
+      default: null,
+      // Giá tính bằng SOL, có thể null nếu không có giá
+    },
     link: {
       type: String,
     },

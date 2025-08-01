@@ -242,6 +242,14 @@ const PostPage = () => {
             </div>
           )}
 
+          {/* Pin Price */}
+          {data.price && (
+            <div className="pinPriceSection">
+              <span className="priceLabel">Price:</span>
+              <span className="priceValue">{data.price} SOL</span>
+            </div>
+          )}
+
           {/* Pin Description */}
           {data.description && (
             <div className="pinDescription">
