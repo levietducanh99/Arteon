@@ -1,6 +1,7 @@
 import Pin from "../models/pin.models.js";
 import Like from "../models/like.model.js";
 import Save from "../models/Save.model.js";
+import Fractionalization from "../models/fractionalization.models.js";
 import jwt from "jsonwebtoken";
 import sharp from "sharp";
 import Imagekit from "imagekit";
@@ -159,7 +160,7 @@ export const createPin = async (req, res) => {
       console.log("ImageKit upload response:", response);
 
       try {
-        // Tạo Pin trước (không cần publicKey)
+        // T�����o Pin trước (không cần publicKey)
         const newPin = await Pin.create({
           user: req.userId,
           title,
@@ -299,7 +300,7 @@ export const fractionalizePin = async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Tìm pin dựa vào id và lấy publicKey nếu có
+    // Tìm pin dựa vào id và lấy tất cả thông tin cần thiết
     const pin = await Pin.findById(id).select('+publicKey');
 
     if (!pin) {
@@ -316,25 +317,48 @@ export const fractionalizePin = async (req, res) => {
       return res.status(400).json({ success: false, message: "Pin has already been fractionalized" });
     }
 
+    console.log(`🔄 Starting fractionalization for pin ${id} with vault ${pin.publicKey}`);
+
     // Gọi hàm fractionalizeVault để phân mảnh vault
     const result = await fractionalizeVault(pin.publicKey);
 
-    // Cập nhật thông tin pin trong database
+    console.log("✅ Fractionalization result:", result);
+
+    // Tạo object fractionalization data với đầy đủ thông tin
+    const fractionalizationData = {
+      tokenMintAddress: result.tokenInfo.mintAddress,
+      tokenBalance: result.tokenInfo.authorityTokenBalance,
+      fractionalizedAt: new Date(),
+      transactionSignature: result.transactionSignature,
+    };
+
+    console.log("💾 Saving fractionalization data to pin:", fractionalizationData);
+
+    // Cập nhật thông tin pin trong database với dữ liệu đầy đủ
     const updatedPin = await Pin.findByIdAndUpdate(
       id,
       {
         isFractionalized: true,
-        fractionalizationData: {
-          tokenMintAddress: result.tokenInfo.mintAddress,
-          tokenBalance: result.tokenInfo.authorityTokenBalance,
-          fractionalizedAt: new Date(),
-          transactionSignature: result.transactionSignature,
-        }
+        fractionalizationData: fractionalizationData
       },
-      { new: true }
+      { new: true, runValidators: true }
     ).select('+publicKey');
 
-    // Trả về kết quả thành công cùng thông tin về pin đã được cập nhật
+    if (!updatedPin) {
+      throw new Error("Failed to update pin with fractionalization data");
+    }
+
+    console.log("✅ Pin updated successfully with fractionalization data");
+
+    // Format lại fractionalizationData cho response
+    const formattedFractionalizationData = {
+      tokenMintAddress: updatedPin.fractionalizationData.tokenMintAddress,
+      tokenBalance: updatedPin.fractionalizationData.tokenBalance,
+      fractionalizedAt: updatedPin.fractionalizationData.fractionalizedAt.toISOString(),
+      transactionSignature: updatedPin.fractionalizationData.transactionSignature,
+    };
+
+    // Trả về kết quả thành c��ng cùng thông tin về pin đã được cập nhật
     return res.status(200).json({
       success: true,
       message: "Pin fractionalized successfully",
@@ -342,20 +366,120 @@ export const fractionalizePin = async (req, res) => {
         ...updatedPin.toObject(),
         publicKey: updatedPin.publicKey,
         hasVault: true,
+        isFractionalized: updatedPin.isFractionalized,
+        fractionalizationData: formattedFractionalizationData,
         vaultStatus: {
           address: updatedPin.publicKey,
           isFractionalized: updatedPin.isFractionalized,
-          fractionalizationData: updatedPin.fractionalizationData
+          fractionalizationData: formattedFractionalizationData
         }
       },
       fractionalizationResult: result
     });
 
   } catch (error) {
-    console.error("Error fractionalizing pin:", error);
+    console.error("❌ Error fractionalizing pin:", error);
     res.status(500).json({
       success: false,
       message: "Failed to fractionalize pin",
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Get fractionalization data for a specific pin - VERSION 2 (Simplified)
+ * GET /:id/fractionalization
+ */
+export const getPinFractionalizationData = async (req, res) => {
+  try {
+    const { id } = req.params;
+    console.log(`🔍 API called: GET /pins/${id}/fractionalization`);
+
+    // Step 1: Tìm pin
+    const pin = await Pin.findById(id).select('+publicKey');
+    console.log(`📌 Pin found:`, pin ? pin._id : 'NOT FOUND');
+
+    if (!pin) {
+      console.log(`❌ Pin not found: ${id}`);
+      return res.status(404).json({
+        success: false,
+        message: "Pin not found"
+      });
+    }
+
+    // Step 2: Kiểm tra vault
+    if (!pin.publicKey) {
+      console.log(`❌ Pin has no vault: ${id}`);
+      return res.status(200).json({
+        success: false,
+        message: "Pin does not have an associated vault",
+        data: {
+          pinId: pin._id,
+          pinTitle: pin.title,
+          hasVault: false,
+          isFractionalized: false
+        }
+      });
+    }
+
+    console.log(`🏛️ Pin vault address: ${pin.publicKey}`);
+
+    // Step 3: Tìm fractionalization record
+    const fractionalizationRecord = await Fractionalization.findOne({
+      vaultPublicKey: pin.publicKey
+    }).sort({ createdAt: -1 }); // Lấy record mới nhất
+
+    console.log(`📊 Fractionalization record:`, fractionalizationRecord ? fractionalizationRecord._id : 'NOT FOUND');
+
+    if (!fractionalizationRecord) {
+      console.log(`❌ No fractionalization found for vault: ${pin.publicKey}`);
+      return res.status(200).json({
+        success: false,
+        message: "Pin has not been fractionalized yet",
+        data: {
+          pinId: pin._id,
+          pinTitle: pin.title,
+          vaultAddress: pin.publicKey,
+          hasVault: true,
+          isFractionalized: false
+        }
+      });
+    }
+
+    // Step 4: Format và trả về data
+    const responseData = {
+      pinId: pin._id,
+      pinTitle: pin.title,
+      vaultAddress: pin.publicKey,
+      hasVault: true,
+      isFractionalized: true,
+      fractionalizationData: {
+        tokenMintAddress: fractionalizationRecord.tokenMintAddress,
+        tokenBalance: fractionalizationRecord.tokenBalance,
+        totalSupply: fractionalizationRecord.totalSupply,
+        fractionalizedAt: fractionalizationRecord.fractionalizedAt,
+        transactionSignature: fractionalizationRecord.transactionSignature,
+        authorityAddress: fractionalizationRecord.authorityAddress,
+        network: fractionalizationRecord.network,
+        status: fractionalizationRecord.status
+      },
+      fractionalizationId: fractionalizationRecord._id
+    };
+
+    console.log(`✅ Successfully fetched fractionalization data for pin: ${id}`);
+
+    return res.status(200).json({
+      success: true,
+      message: "Fractionalization data retrieved successfully",
+      data: responseData
+    });
+
+  } catch (error) {
+    console.error(`❌ Error in getPinFractionalizationData:`, error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
       error: error.message
     });
   }

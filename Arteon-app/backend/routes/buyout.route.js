@@ -34,6 +34,9 @@ router.get("/offers/:vaultAddress", buyoutController.getBuyoutOffers);
 // GET /buyout/generate-buyer-keypair - Generate a new buyer keypair for testing
 router.get("/generate-buyer-keypair", buyoutController.generateBuyerKeypair);
 
+// GET /buyout/generate-buyer-keypair-default - Get default buyer keypair from config
+router.get("/generate-buyer-keypair-default", buyoutController.getDefaultBuyerKeypair);
+
 // POST /buyout/airdrop-buyer - Request SOL airdrop for a buyer (localhost only)
 router.post("/airdrop-buyer", buyoutController.airdropToBuyer);
 

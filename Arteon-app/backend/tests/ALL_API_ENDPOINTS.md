@@ -67,6 +67,8 @@ POST /api/users/login
 | DELETE | `/:id` | Delete pin | ✅ |
 | POST | `/:id/like` | Like/unlike pin | ✅ |
 | POST | `/:id/save` | Save/unsave pin | ✅ |
+| POST | `/:id/fractionalize` | Fractionalize pin vault | ✅ |
+| GET | `/:id/fractionalization` | Get pin fractionalization data | ❌ |
 | GET | `/user/:userId` | Get pins by user | ❌ |
 | GET | `/board/:boardId` | Get pins in board | ❌ |
 

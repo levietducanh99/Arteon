@@ -970,6 +970,34 @@ class BuyoutController {
       });
     }
   };
+
+  /**
+   * Get default buyer keypair
+   * GET /generate-buyer-keypair-default
+   */
+  getDefaultBuyerKeypair = async (req, res) => {
+    try {
+      console.log('🔑 Loading default buyer keypair from config...');
+
+      // Load keypair từ file config
+      const keypairPath = path.join(__dirname, '../config/sample-buyer-keypair.json');
+      const keypairData = JSON.parse(fs.readFileSync(keypairPath, 'utf8'));
+
+      return res.status(200).json({
+        success: true,
+        message: "Default buyer keypair loaded successfully",
+        keypair: keypairData
+      });
+
+    } catch (error) {
+      console.error('❌ Error loading default buyer keypair:', error);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to load default buyer keypair",
+        error: error.message
+      });
+    }
+  };
 }
 
 export default new BuyoutController();
