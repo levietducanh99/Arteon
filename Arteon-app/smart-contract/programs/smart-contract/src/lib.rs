@@ -1,4 +1,6 @@
 use anchor_lang::prelude::*;
+use anchor_spl::token::{self, Mint, Token, TokenAccount, MintTo, mint_to};
+use anchor_spl::associated_token::AssociatedToken;
 
 declare_id!("6BoiezFL64ETgYVmNAE3w3di2qoQDEU6BMHt3Yqfe9XU");
 
@@ -42,9 +44,101 @@ pub mod smart_contract {
         vault.total_supply = total_supply;
         vault.is_fractionalized = false;
         vault.buyout_status = 0;
+        vault.token_mint = None;
 
         msg!("Vault initialized with metadata: {}, total supply: {}",
             vault.metadata_uri, vault.total_supply);
+        Ok(())
+    }
+
+    pub fn fractionalize_vault(ctx: Context<FractionalizeVault>) -> Result<()> {
+        let vault = &mut ctx.accounts.vault;
+
+        // Check that the vault has not already been fractionalized
+        if vault.is_fractionalized {
+            return Err(ErrorCode::VaultAlreadyFractionalized.into());
+        }
+
+        // Get the bump for the token mint PDA
+        let vault_key = vault.key();
+        let seeds = &[
+            b"token_mint",
+            vault_key.as_ref(),
+            &[ctx.bumps.token_mint],
+        ];
+        let signer = &[&seeds[..]];
+
+        // Initialize the mint account
+        let rent = Rent::get()?;
+        let space = 82; // Size of Mint account
+        let lamports = rent.minimum_balance(space);
+
+        // Create the mint account using system program WITH PDA SIGNER
+        anchor_lang::system_program::create_account(
+            CpiContext::new_with_signer(
+                ctx.accounts.system_program.to_account_info(),
+                anchor_lang::system_program::CreateAccount {
+                    from: ctx.accounts.authority.to_account_info(),
+                    to: ctx.accounts.token_mint.to_account_info(),
+                },
+                signer, // Use PDA signer here!
+            ),
+            lamports,
+            space as u64,
+            &ctx.accounts.token_program.key(),
+        )?;
+
+        // Initialize the mint with 9 decimals
+        token::initialize_mint(
+            CpiContext::new(
+                ctx.accounts.token_program.to_account_info(),
+                token::InitializeMint {
+                    mint: ctx.accounts.token_mint.to_account_info(),
+                    rent: ctx.accounts.rent.to_account_info(),
+                },
+            ),
+            9, // 9 decimals
+            &ctx.accounts.authority.key(),
+            Some(&ctx.accounts.authority.key()),
+        )?;
+
+        // Create the associated token account for the authority if it doesn't exist
+        if ctx.accounts.authority_token_account.data_is_empty() {
+            anchor_spl::associated_token::create(
+                CpiContext::new(
+                    ctx.accounts.associated_token_program.to_account_info(),
+                    anchor_spl::associated_token::Create {
+                        payer: ctx.accounts.authority.to_account_info(),
+                        associated_token: ctx.accounts.authority_token_account.to_account_info(),
+                        authority: ctx.accounts.authority.to_account_info(),
+                        mint: ctx.accounts.token_mint.to_account_info(),
+                        system_program: ctx.accounts.system_program.to_account_info(),
+                        token_program: ctx.accounts.token_program.to_account_info(),
+                    },
+                ),
+            )?;
+        }
+
+        // Mint the tokens to the authority's token account
+        let mint_ctx = CpiContext::new(
+            ctx.accounts.token_program.to_account_info(),
+            MintTo {
+                mint: ctx.accounts.token_mint.to_account_info(),
+                to: ctx.accounts.authority_token_account.to_account_info(),
+                authority: ctx.accounts.authority.to_account_info(),
+            },
+        );
+
+        mint_to(mint_ctx, vault.total_supply)?;
+
+        // Update the vault state
+        vault.is_fractionalized = true;
+        vault.token_mint = Some(ctx.accounts.token_mint.key());
+
+        msg!("Vault successfully fractionalized!");
+        msg!("Token mint: {}", ctx.accounts.token_mint.key());
+        msg!("Authority token balance: {}", vault.total_supply);
+
         Ok(())
     }
 }
@@ -75,13 +169,44 @@ pub struct InitializeVault<'info> {
                4 + 200 + // metadata_uri: String (4 bytes for length + max 200 chars)
                8 + // total_supply: u64
                1 + // is_fractionalized: bool
-               1   // buyout_status: u8
+               1 + // buyout_status: u8
+               1 + 32  // token_mint: Option<Pubkey> (1 for Option discriminator + 32 for Pubkey)
     )]
     pub vault: Account<'info, Vault>,
 
     #[account(mut)]
     pub authority: Signer<'info>,
     pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct FractionalizeVault<'info> {
+    #[account(
+        mut,
+        has_one = authority @ ErrorCode::UnauthorizedAccess,
+    )]
+    pub vault: Account<'info, Vault>,
+
+    #[account(mut)]
+    pub authority: Signer<'info>,
+
+    /// Token mint PDA derived from vault address
+    /// CHECK: This PDA is created and initialized as a token mint in the instruction
+    #[account(
+        mut,
+        seeds = [b"token_mint", vault.key().as_ref()],
+        bump,
+    )]
+    pub token_mint: UncheckedAccount<'info>,
+
+    /// CHECK: This account is initialized as the authority's associated token account
+    #[account(mut)]
+    pub authority_token_account: UncheckedAccount<'info>,
+
+    pub token_program: Program<'info, Token>,
+    pub associated_token_program: Program<'info, AssociatedToken>,
+    pub system_program: Program<'info, System>,
+    pub rent: Sysvar<'info, Rent>,
 }
 
 #[account]
@@ -97,10 +222,17 @@ pub struct Vault {
     pub total_supply: u64,
     pub is_fractionalized: bool,
     pub buyout_status: u8,
+    pub token_mint: Option<Pubkey>, // Added to store the mint address when fractionalized
 }
 
 #[error_code]
 pub enum ErrorCode {
     #[msg("Cannot decrement counter below zero")]
     CannotDecrementBelowZero,
+
+    #[msg("Unauthorized access. Only the vault authority can perform this action.")]
+    UnauthorizedAccess,
+
+    #[msg("Vault has already been fractionalized.")]
+    VaultAlreadyFractionalized,
 }
