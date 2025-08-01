@@ -4,6 +4,7 @@ import BN from 'bn.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import BuyoutOffer from '../models/buyoutOffer.models.js';
 
 // Get __dirname equivalent for ES modules
 const __filename = fileURLToPath(import.meta.url);
@@ -242,16 +243,62 @@ class BuyoutController {
       console.log('👤 Buyer:', buyer.publicKey.toString());
       console.log('💵 Offer:', offerLamports, 'lamports');
 
-      res.json({
-        success: true,
-        signature,
-        data: {
-          vault: vaultAddress,
-          buyer: buyer.publicKey.toString(),
-          offerAmount: offerLamports,
-          buyoutOfferPDA: buyoutOfferPDA.toString()
-        }
-      });
+      // Save buyout offer to database
+      try {
+        console.log('💾 Saving buyout offer to database...');
+
+        const buyoutOfferRecord = await BuyoutOffer.create({
+          vaultAddress,
+          buyerPublicKey: buyer.publicKey.toString(),
+          buyoutOfferPDA: buyoutOfferPDA.toString(),
+          offerAmount: offerLamports.toString(),
+          offerAmountSOL: offerLamports / 1000000000, // Convert lamports to SOL
+          transactionSignature: signature,
+          network: 'localhost',
+          status: 'pending',
+          vaultInfo: {
+            authority: vaultAccount.authority.toString(),
+            metadataUri: vaultAccount.metadataUri,
+            totalSupply: vaultAccount.totalSupply.toString(),
+            tokenMint: vaultAccount.tokenMint ? vaultAccount.tokenMint.toString() : null,
+          },
+          buyerNote: req.body.buyerNote || '', // Optional note from buyer
+        });
+
+        console.log('✅ Buyout offer saved to database with ID:', buyoutOfferRecord._id);
+
+        res.json({
+          success: true,
+          signature,
+          data: {
+            vault: vaultAddress,
+            buyer: buyer.publicKey.toString(),
+            offerAmount: offerLamports,
+            offerAmountSOL: offerLamports / 1000000000,
+            buyoutOfferPDA: buyoutOfferPDA.toString(),
+            offerId: buyoutOfferRecord._id,
+            status: 'pending',
+            createdAt: buyoutOfferRecord.createdAt,
+            expiresAt: buyoutOfferRecord.expiresAt,
+          }
+        });
+
+      } catch (dbError) {
+        console.error('❌ Failed to save buyout offer to database:', dbError);
+
+        // Still return success since blockchain operation succeeded (or mocked)
+        res.json({
+          success: true,
+          signature,
+          data: {
+            vault: vaultAddress,
+            buyer: buyer.publicKey.toString(),
+            offerAmount: offerLamports,
+            buyoutOfferPDA: buyoutOfferPDA.toString(),
+            warning: 'Offer created but not saved to database'
+          }
+        });
+      }
 
     } catch (error) {
       console.error('❌ Error initiating buyout:', error);
@@ -568,6 +615,358 @@ class BuyoutController {
       res.status(500).json({
         success: false,
         message: `Failed to request localhost airdrop: ${error.message}`
+      });
+    }
+  };
+
+  // GET /buyout/all-offers - Get all buyout offers across all vaults
+  getAllBuyoutOffers = async (req, res) => {
+    try {
+      const {
+        page = 1,
+        limit = 20,
+        status = 'all',
+        sortBy = 'createdAt',
+        sortOrder = 'desc',
+        vaultAddress,
+        buyerPublicKey,
+        minAmount,
+        maxAmount
+      } = req.query;
+
+      console.log('🔍 Fetching all buyout offers with filters:', {
+        page, limit, status, sortBy, sortOrder, vaultAddress, buyerPublicKey
+      });
+
+      // Build filter object
+      const filter = {};
+
+      if (status !== 'all') {
+        filter.status = status;
+      }
+
+      if (vaultAddress) {
+        filter.vaultAddress = vaultAddress;
+      }
+
+      if (buyerPublicKey) {
+        filter.buyerPublicKey = buyerPublicKey;
+      }
+
+      if (minAmount || maxAmount) {
+        filter.offerAmountSOL = {};
+        if (minAmount) filter.offerAmountSOL.$gte = parseFloat(minAmount);
+        if (maxAmount) filter.offerAmountSOL.$lte = parseFloat(maxAmount);
+      }
+
+      // Build sort object
+      const sort = {};
+      sort[sortBy] = sortOrder === 'desc' ? -1 : 1;
+
+      // Execute query with pagination
+      const skip = (page - 1) * limit;
+
+      const [offers, totalCount] = await Promise.all([
+        BuyoutOffer.find(filter)
+          .sort(sort)
+          .skip(skip)
+          .limit(parseInt(limit))
+          .lean(),
+        BuyoutOffer.countDocuments(filter)
+      ]);
+
+      // Calculate pagination info
+      const totalPages = Math.ceil(totalCount / limit);
+      const hasNext = page < totalPages;
+      const hasPrev = page > 1;
+
+      console.log(`✅ Found ${offers.length} buyout offers (${totalCount} total)`);
+
+      res.json({
+        success: true,
+        data: {
+          offers,
+          pagination: {
+            currentPage: parseInt(page),
+            totalPages,
+            totalOffers: totalCount,
+            offersPerPage: parseInt(limit),
+            hasNext,
+            hasPrev,
+          },
+          filters: {
+            status,
+            vaultAddress,
+            buyerPublicKey,
+            minAmount,
+            maxAmount,
+            sortBy,
+            sortOrder
+          }
+        }
+      });
+
+    } catch (error) {
+      console.error('❌ Error fetching all buyout offers:', error);
+      res.status(500).json({
+        success: false,
+        message: `Failed to fetch buyout offers: ${error.message}`
+      });
+    }
+  };
+
+  // GET /buyout/vault/:vaultAddress/offers - Get buyout offers for specific vault from database
+  getVaultBuyoutOffers = async (req, res) => {
+    try {
+      const { vaultAddress } = req.params;
+      const { status = 'pending', sortBy = 'offerAmountSOL', sortOrder = 'desc' } = req.query;
+
+      console.log('🔍 Fetching buyout offers from database for vault:', vaultAddress);
+
+      if (!vaultAddress) {
+        return res.status(400).json({
+          success: false,
+          message: 'Vault address is required'
+        });
+      }
+
+      // Build filter
+      const filter = { vaultAddress };
+      if (status !== 'all') {
+        filter.status = status;
+      }
+
+      // Get offers from database
+      const offers = await BuyoutOffer.find(filter)
+        .sort({ [sortBy]: sortOrder === 'desc' ? -1 : 1 })
+        .lean();
+
+      // Get vault info for context
+      let vaultInfo = null;
+      try {
+        const vaultPubkey = new PublicKey(vaultAddress);
+        const vaultAccount = await this.program.account.vault.fetch(vaultPubkey);
+        vaultInfo = {
+          authority: vaultAccount.authority.toString(),
+          metadataUri: vaultAccount.metadataUri,
+          totalSupply: vaultAccount.totalSupply.toString(),
+          isFractionalized: vaultAccount.isFractionalized,
+          tokenMint: vaultAccount.tokenMint ? vaultAccount.tokenMint.toString() : null,
+        };
+      } catch (error) {
+        console.warn('⚠️ Could not fetch vault info:', error.message);
+      }
+
+      console.log(`✅ Found ${offers.length} buyout offers for vault ${vaultAddress}`);
+
+      res.json({
+        success: true,
+        data: {
+          vaultAddress,
+          vaultInfo,
+          totalOffers: offers.length,
+          offers,
+          filters: { status, sortBy, sortOrder }
+        }
+      });
+
+    } catch (error) {
+      console.error('❌ Error fetching vault buyout offers:', error);
+      res.status(500).json({
+        success: false,
+        message: `Failed to fetch vault buyout offers: ${error.message}`
+      });
+    }
+  };
+
+  // GET /buyout/buyer/:buyerPublicKey/offers - Get buyout offers by buyer
+  getBuyerOffers = async (req, res) => {
+    try {
+      const { buyerPublicKey } = req.params;
+      const { status = 'all', page = 1, limit = 10 } = req.query;
+
+      console.log('🔍 Fetching buyout offers for buyer:', buyerPublicKey);
+
+      if (!buyerPublicKey) {
+        return res.status(400).json({
+          success: false,
+          message: 'Buyer public key is required'
+        });
+      }
+
+      // Build filter
+      const filter = { buyerPublicKey };
+      if (status !== 'all') {
+        filter.status = status;
+      }
+
+      // Execute query with pagination
+      const skip = (page - 1) * limit;
+
+      const [offers, totalCount] = await Promise.all([
+        BuyoutOffer.find(filter)
+          .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(parseInt(limit))
+          .lean(),
+        BuyoutOffer.countDocuments(filter)
+      ]);
+
+      const totalPages = Math.ceil(totalCount / limit);
+
+      console.log(`✅ Found ${offers.length} buyout offers for buyer ${buyerPublicKey}`);
+
+      res.json({
+        success: true,
+        data: {
+          buyerPublicKey,
+          totalOffers: totalCount,
+          offers,
+          pagination: {
+            currentPage: parseInt(page),
+            totalPages,
+            hasNext: page < totalPages,
+            hasPrev: page > 1,
+          }
+        }
+      });
+
+    } catch (error) {
+      console.error('❌ Error fetching buyer offers:', error);
+      res.status(500).json({
+        success: false,
+        message: `Failed to fetch buyer offers: ${error.message}`
+      });
+    }
+  };
+
+  // GET /buyout/top-offers - Get top buyout offers by amount
+  getTopOffers = async (req, res) => {
+    try {
+      const { limit = 10, status = 'pending' } = req.query;
+
+      console.log('🔍 Fetching top buyout offers...');
+
+      // Build filter
+      const filter = {};
+      if (status !== 'all') {
+        filter.status = status;
+        if (status === 'pending') {
+          // Only include non-expired offers
+          filter.expiresAt = { $gt: new Date() };
+        }
+      }
+
+      const offers = await BuyoutOffer.find(filter)
+        .sort({ offerAmountSOL: -1, createdAt: -1 })
+        .limit(parseInt(limit))
+        .lean();
+
+      console.log(`✅ Found ${offers.length} top buyout offers`);
+
+      res.json({
+        success: true,
+        data: {
+          totalOffers: offers.length,
+          offers,
+          criteria: {
+            sortBy: 'offerAmountSOL',
+            sortOrder: 'desc',
+            limit: parseInt(limit),
+            status
+          }
+        }
+      });
+
+    } catch (error) {
+      console.error('❌ Error fetching top offers:', error);
+      res.status(500).json({
+        success: false,
+        message: `Failed to fetch top offers: ${error.message}`
+      });
+    }
+  };
+
+  // GET /buyout/statistics - Get buyout statistics
+  getBuyoutStatistics = async (req, res) => {
+    try {
+      console.log('📊 Calculating buyout statistics...');
+
+      const [
+        totalOffers,
+        pendingOffers,
+        acceptedOffers,
+        rejectedOffers,
+        expiredOffers,
+        totalValueStats,
+        topOffer
+      ] = await Promise.all([
+        BuyoutOffer.countDocuments(),
+        BuyoutOffer.countDocuments({ status: 'pending', expiresAt: { $gt: new Date() } }),
+        BuyoutOffer.countDocuments({ status: 'accepted' }),
+        BuyoutOffer.countDocuments({ status: 'rejected' }),
+        BuyoutOffer.countDocuments({
+          $or: [
+            { status: 'expired' },
+            { status: 'pending', expiresAt: { $lte: new Date() } }
+          ]
+        }),
+        BuyoutOffer.aggregate([
+          {
+            $group: {
+              _id: null,
+              totalValue: { $sum: '$offerAmountSOL' },
+              averageOffer: { $avg: '$offerAmountSOL' },
+              minOffer: { $min: '$offerAmountSOL' },
+              maxOffer: { $max: '$offerAmountSOL' }
+            }
+          }
+        ]),
+        BuyoutOffer.findOne().sort({ offerAmountSOL: -1 }).lean()
+      ]);
+
+      const stats = totalValueStats[0] || {
+        totalValue: 0,
+        averageOffer: 0,
+        minOffer: 0,
+        maxOffer: 0
+      };
+
+      console.log('✅ Buyout statistics calculated');
+
+      res.json({
+        success: true,
+        data: {
+          offers: {
+            total: totalOffers,
+            pending: pendingOffers,
+            accepted: acceptedOffers,
+            rejected: rejectedOffers,
+            expired: expiredOffers,
+          },
+          value: {
+            totalValueSOL: stats.totalValue,
+            averageOfferSOL: stats.averageOffer,
+            minOfferSOL: stats.minOffer,
+            maxOfferSOL: stats.maxOffer,
+          },
+          topOffer: topOffer ? {
+            id: topOffer._id,
+            vaultAddress: topOffer.vaultAddress,
+            buyerPublicKey: topOffer.buyerPublicKey,
+            offerAmountSOL: topOffer.offerAmountSOL,
+            status: topOffer.status,
+            createdAt: topOffer.createdAt
+          } : null,
+          generatedAt: new Date().toISOString()
+        }
+      });
+
+    } catch (error) {
+      console.error('❌ Error calculating buyout statistics:', error);
+      res.status(500).json({
+        success: false,
+        message: `Failed to calculate statistics: ${error.message}`
       });
     }
   };
