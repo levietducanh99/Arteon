@@ -141,6 +141,38 @@ pub mod smart_contract {
 
         Ok(())
     }
+
+    pub fn initiate_buyout(
+        ctx: Context<InitiateBuyout>,
+        offer_amount: u64
+    ) -> Result<()> {
+        let vault = &ctx.accounts.vault;
+        let buyout_offer = &mut ctx.accounts.buyout_offer;
+
+        // Check that the vault is fractionalized
+        if !vault.is_fractionalized {
+            return Err(ErrorCode::VaultNotFractionalized.into());
+        }
+
+        // Check that offer amount is greater than 0
+        if offer_amount == 0 {
+            return Err(ErrorCode::InvalidOfferAmount.into());
+        }
+
+        // Initialize the buyout offer
+        buyout_offer.vault = vault.key();
+        buyout_offer.buyer = ctx.accounts.buyer.key();
+        buyout_offer.offer_amount = offer_amount;
+        buyout_offer.timestamp = Clock::get()?.unix_timestamp;
+
+        msg!("Buyout offer initiated!");
+        msg!("Vault: {}", buyout_offer.vault);
+        msg!("Buyer: {}", buyout_offer.buyer);
+        msg!("Offer amount: {} lamports", buyout_offer.offer_amount);
+        msg!("Timestamp: {}", buyout_offer.timestamp);
+
+        Ok(())
+    }
 }
 
 #[derive(Accounts)]
@@ -209,6 +241,30 @@ pub struct FractionalizeVault<'info> {
     pub rent: Sysvar<'info, Rent>,
 }
 
+#[derive(Accounts)]
+pub struct InitiateBuyout<'info> {
+    #[account()]
+    pub vault: Account<'info, Vault>,
+
+    #[account(mut)]
+    pub buyer: Signer<'info>,
+
+    #[account(
+        init,
+        payer = buyer,
+        space = 8 + // discriminator
+               32 + // vault: Pubkey
+               32 + // buyer: Pubkey
+               8 + // offer_amount: u64
+               8,   // timestamp: i64
+        seeds = [b"buyout_offer", vault.key().as_ref(), buyer.key().as_ref()],
+        bump
+    )]
+    pub buyout_offer: Account<'info, BuyoutOffer>,
+
+    pub system_program: Program<'info, System>,
+}
+
 #[account]
 pub struct Counter {
     pub authority: Pubkey,
@@ -225,6 +281,14 @@ pub struct Vault {
     pub token_mint: Option<Pubkey>, // Added to store the mint address when fractionalized
 }
 
+#[account]
+pub struct BuyoutOffer {
+    pub vault: Pubkey,
+    pub buyer: Pubkey,
+    pub offer_amount: u64,
+    pub timestamp: i64,
+}
+
 #[error_code]
 pub enum ErrorCode {
     #[msg("Cannot decrement counter below zero")]
@@ -235,4 +299,10 @@ pub enum ErrorCode {
 
     #[msg("Vault has already been fractionalized.")]
     VaultAlreadyFractionalized,
+
+    #[msg("Vault has not been fractionalized.")]
+    VaultNotFractionalized,
+
+    #[msg("Invalid offer amount. Offer amount must be greater than zero.")]
+    InvalidOfferAmount,
 }

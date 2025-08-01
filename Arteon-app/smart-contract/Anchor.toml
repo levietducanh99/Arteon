@@ -17,7 +17,7 @@ cluster = "Localnet"
 wallet = "~/.config/solana/id.json"
 
 [test]
-startup_wait = 10000
+startup_wait = 20000
 shutdown_wait = 2000
 upgradeable = false
 
