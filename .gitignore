@@ -7,3 +7,6 @@
 *.ico
 *.txt
 .env
+node_modules/
+x
+
