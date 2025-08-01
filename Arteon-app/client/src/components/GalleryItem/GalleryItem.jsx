@@ -6,7 +6,7 @@ export const GalleryItem = ({item}) => {
   return (
     <div
       className="galleryItem"
-      style={{ gridRowEnd: `span ${Math.ceil(item.height / 100)}` }}
+      style={{ gridRowEnd: `span ${Math.ceil(item.height / 200)}` }}
     >
       <Image path={item.media} alt="" w={372} h={optimizedHeight}></Image>
       <Link to={`/pin/${item._id}`} className="overlay"></Link>

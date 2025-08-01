@@ -4,6 +4,7 @@ import Save from "../models/Save.model.js";
 import jwt from "jsonwebtoken";
 import sharp from "sharp";
 import Imagekit from "imagekit";
+import { initializeVault } from "../utils/vaultService.js";
 
 export const getPins = async (req, res) => {
   const pageNumber = Number(req.query.cursor) || 0;
@@ -117,19 +118,68 @@ export const createPin = async (req, res) => {
     })
     .then(async (response) => {
       console.log("ImageKit upload response:", response);
-      console.log(req);
-      const newPin = await Pin.create({
-        user: req.userId,
-        title,
-        description,
-        link: link || "",
-        tags: tags ? tags.split(",").map((tag) => tag.trim()) : [],
-        board: board || null,
-        media: response.filePath,
-        width: response.width,
-        height: response.height,
-      });
-      return res.status(201).json(newPin);
+
+      try {
+        // Tạo Pin trước (không cần publicKey)
+        const newPin = await Pin.create({
+          user: req.userId,
+          title,
+          description,
+          link: link || "",
+          tags: tags ? tags.split(",").map((tag) => tag.trim()) : [],
+          board: board || null,
+          media: response.filePath,
+          width: response.width,
+          height: response.height,
+          // Không cần publicKey nữa vì đã không bắt buộc
+        });
+
+        console.log("📝 Pin created with ID:", newPin._id.toString());
+
+        // Tạo metadata với số tăng dần dựa trên timestamp
+        const timestamp = Date.now();
+        const metadataUri = `arteon-nft-${timestamp}`;
+        const totalSupply = 1000000; // Default total supply
+
+        console.log("🚀 Creating vault with metadata:", metadataUri);
+
+        const vaultResult = await initializeVault(metadataUri, totalSupply);
+
+        if (vaultResult.success) {
+          // Cập nhật Pin với publicKey của vault
+          const updatedPin = await Pin.findByIdAndUpdate(
+            newPin._id,
+            { publicKey: vaultResult.vaultPublicKey },
+            { new: true }
+          );
+
+          console.log("✅ Pin updated with vault publicKey:", vaultResult.vaultPublicKey);
+
+          return res.status(201).json({
+            ...updatedPin.toObject(),
+            vaultInfo: {
+              publicKey: vaultResult.vaultPublicKey,
+              transactionSignature: vaultResult.transactionSignature,
+              authority: vaultResult.authority,
+              network: vaultResult.network,
+              metadata: metadataUri,
+            }
+          });
+        } else {
+          // Nếu tạo vault thất bại, vẫn trả về Pin nhưng không có publicKey
+          console.log("⚠️ Vault creation failed, returning pin without vault");
+          return res.status(201).json({
+            ...newPin.toObject(),
+            vaultError: "Failed to create vault"
+          });
+        }
+      } catch (error) {
+        console.error("❌ Error in pin creation process:", error);
+        return res.status(500).json({
+          message: "Error creating pin and vault",
+          error: error.message
+        });
+      }
     })
     .catch((error) => {
       console.error("ImageKit upload error:", error);

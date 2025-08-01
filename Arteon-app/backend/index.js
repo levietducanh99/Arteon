@@ -1,4 +1,4 @@
-import express, { json } from "express";
+import express from "express";
 
 import userRouter from "./routes/user.route.js";
 import pinRouter from "./routes/pin.route.js";
@@ -9,6 +9,7 @@ import connectDB from "./utils/connectDB.js";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import fileUpload from "express-fileupload";
+import { initializeAuthorityWallet } from "./utils/authorityWallet.js";
 
 const app = express();
 
@@ -23,7 +24,27 @@ app.use("/comments", commnetRouter);
 app.use("/boards", boardRouter);
 app.use("/vault", vaultRouter);
 
-app.listen(3000, () => {
-  connectDB();
-  console.log("sever is running");
-});
+// Initialize server
+const startServer = async () => {
+  try {
+    // Connect to database
+    await connectDB();
+
+    // Initialize authority wallet with SOL
+    console.log("🚀 Initializing server authority wallet...");
+    const authorityInfo = await initializeAuthorityWallet();
+    console.log("✅ Authority wallet ready:");
+    console.log(`   📍 Address: ${authorityInfo.publicKey}`);
+    console.log(`   💰 Balance: ${authorityInfo.balance} SOL`);
+
+    // Start server
+    app.listen(3000, () => {
+      console.log("🌐 Server is running on http://localhost:3000");
+    });
+  } catch (error) {
+    console.error("❌ Failed to start server:", error);
+    process.exit(1);
+  }
+};
+
+startServer();

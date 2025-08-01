@@ -7,6 +7,32 @@ const pinSchema = new Schema(
       type: String,
       required: true,
     },
+    publicKey:{
+      type: String,
+      required: false
+    },
+    isFractionalized: {
+      type: Boolean,
+      default: false,
+    },
+    fractionalizationData: {
+      tokenMintAddress: {
+        type: String,
+        required: false,
+      },
+      tokenBalance: {
+        type: String,
+        required: false,
+      },
+      fractionalizedAt: {
+        type: Date,
+        required: false,
+      },
+      transactionSignature: {
+        type: String,
+        required: false,
+      },
+    },
     width: {
       type: Number,
       required: true,

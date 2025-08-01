@@ -3,6 +3,7 @@ import { PublicKey, Keypair, Connection } from "@solana/web3.js";
 import BN from "bn.js";
 import fs from "fs";
 import path from "path";
+import { getAuthorityWallet, initializeAuthorityWallet } from "./authorityWallet.js";
 
 // Smart contract IDL and program ID
 const PROGRAM_ID = "CRaskU2g9Wzenfm1s89z5LdDkgCoaMqo9dbHn7YXvTAY"; // From IDL file
@@ -12,44 +13,25 @@ const IDL_PATH = "./smart-contract/target/idl/smart_contract.json";
 const LOCAL_CONNECTION = new Connection("http://localhost:8899", "confirmed");
 
 /**
- * Initialize a vault on local Solana network
+ * Initialize a vault on local Solana network with fixed server authority
  */
 export async function initializeVault(metadataUri, totalSupply, payerSecretKey) {
   try {
     console.log(`🏠 Using localhost only for all operations`);
     console.log(`📝 Program ID: ${PROGRAM_ID}`);
 
-    // Generate a new keypair for the payer (simple local testing)
-    const payerKeypair = Keypair.generate();
-    console.log(`🔑 Generated payer wallet: ${payerKeypair.publicKey.toString()}`);
+    // Initialize and get the fixed server authority wallet
+    await initializeAuthorityWallet();
+    const authorityKeypair = getAuthorityWallet();
 
-    // Check local balance and airdrop if needed
-    const balance = await LOCAL_CONNECTION.getBalance(payerKeypair.publicKey);
-    console.log(`💰 Local balance: ${balance / anchor.web3.LAMPORTS_PER_SOL} SOL`);
+    console.log(`🔑 Using fixed server authority: ${authorityKeypair.publicKey.toString()}`);
 
-    if (balance < 0.1 * anchor.web3.LAMPORTS_PER_SOL) {
-      console.log("💧 Requesting local airdrop...");
-      try {
-        const airdropSignature = await LOCAL_CONNECTION.requestAirdrop(
-          payerKeypair.publicKey,
-          10 * anchor.web3.LAMPORTS_PER_SOL // Request 10 SOL for local testing
-        );
-        await LOCAL_CONNECTION.confirmTransaction(airdropSignature, "confirmed");
-        console.log("✅ Local airdrop completed!");
+    // Check local balance (authority should already have SOL from initializeAuthorityWallet)
+    const balance = await LOCAL_CONNECTION.getBalance(authorityKeypair.publicKey);
+    console.log(`💰 Authority balance: ${balance / anchor.web3.LAMPORTS_PER_SOL} SOL`);
 
-        // Wait for balance to update
-        await new Promise(resolve => setTimeout(resolve, 2000));
-
-        const newBalance = await LOCAL_CONNECTION.getBalance(payerKeypair.publicKey);
-        console.log(`💰 New local balance: ${newBalance / anchor.web3.LAMPORTS_PER_SOL} SOL`);
-      } catch (airdropError) {
-        console.log("❌ Local airdrop failed:", airdropError.message);
-        throw new Error(`Local airdrop failed: ${airdropError.message}`);
-      }
-    }
-
-    // Set up wallet and provider for local network
-    const wallet = new anchor.Wallet(payerKeypair);
+    // Set up wallet and provider for local network using fixed authority
+    const wallet = new anchor.Wallet(authorityKeypair);
     const provider = new anchor.AnchorProvider(LOCAL_CONNECTION, wallet, {
       preflightCommitment: "confirmed",
     });
@@ -68,11 +50,11 @@ export async function initializeVault(metadataUri, totalSupply, payerSecretKey) 
     // Convert total supply to BN
     const totalSupplyBN = new BN(totalSupply);
 
-    console.log(`🚀 Initializing vault with:
+    console.log(`🚀 Initializing vault with fixed server authority:
       - Metadata URI: ${metadataUri}
       - Total Supply: ${totalSupply}
       - Vault Address: ${vaultKeypair.publicKey.toString()}
-      - Authority: ${payerKeypair.publicKey.toString()}`);
+      - Fixed Authority: ${authorityKeypair.publicKey.toString()}`);
 
     // Send transaction to local smart contract
     try {
@@ -80,22 +62,23 @@ export async function initializeVault(metadataUri, totalSupply, payerSecretKey) 
         .initializeVault(metadataUri, totalSupplyBN)
         .accounts({
           vault: vaultKeypair.publicKey,
-          authority: payerKeypair.publicKey,
+          authority: authorityKeypair.publicKey,
           systemProgram: anchor.web3.SystemProgram.programId,
         })
         .signers([vaultKeypair])
         .rpc();
 
-      console.log("✅ Vault initialized successfully on local network!");
+      console.log("✅ Vault initialized successfully with fixed server authority!");
       console.log("📝 Transaction signature:", tx);
 
       return {
         success: true,
         vaultPublicKey: vaultKeypair.publicKey.toString(),
         transactionSignature: tx,
-        authority: payerKeypair.publicKey.toString(),
+        authority: authorityKeypair.publicKey.toString(),
         network: "localhost",
-        payerWallet: payerKeypair.publicKey.toString(),
+        payerWallet: authorityKeypair.publicKey.toString(),
+        isFixedAuthority: true,
       };
     } catch (txError) {
       // Handle transaction errors
@@ -134,17 +117,28 @@ export function generateTestKeypair() {
 export async function getVaultInfo(vaultAddress) {
   try {
     console.log(`🏠 Getting vault info from localhost`);
+    console.log(`📍 Vault address to check: ${vaultAddress}`);
 
     // Validate vault address
-    if (!vaultAddress || typeof vaultAddress !== 'string' || vaultAddress.length < 32) {
-      throw new Error("Invalid vault address format");
+    if (!vaultAddress || typeof vaultAddress !== 'string') {
+      throw new Error("Vault address is required and must be a string");
+    }
+
+    // Trim whitespace
+    vaultAddress = vaultAddress.trim();
+
+    // Basic length check for base58 encoded public key (typically 43-44 characters)
+    if (vaultAddress.length < 32 || vaultAddress.length > 50) {
+      throw new Error(`Invalid vault address length: ${vaultAddress.length}. Expected 32-50 characters for base58 encoded public key.`);
     }
 
     let vaultPublicKey;
     try {
       vaultPublicKey = new PublicKey(vaultAddress);
+      console.log(`✅ Valid public key format: ${vaultPublicKey.toString()}`);
     } catch (error) {
-      throw new Error(`Invalid vault address: ${vaultAddress}. Must be a valid base58 Solana address.`);
+      console.error(`❌ PublicKey parsing failed for: "${vaultAddress}"`);
+      throw new Error(`Invalid vault address format: ${vaultAddress}. Must be a valid base58 Solana address. Error: ${error.message}`);
     }
 
     // Load IDL
@@ -161,15 +155,21 @@ export async function getVaultInfo(vaultAddress) {
     const program = new anchor.Program(idl, provider);
     const vaultAccount = await program.account.vault.fetch(vaultPublicKey);
     
+    console.log("🔍 Raw vault account data:", vaultAccount);
+
     return {
       success: true,
       vault: {
-        authority: vaultAccount.authority.toString(),
-        metadataUri: vaultAccount.metadata_uri,
-        totalSupply: vaultAccount.total_supply.toString(),
-        isFractionalized: vaultAccount.is_fractionalized,
-        buyoutStatus: vaultAccount.buyout_status,
-        tokenMint: vaultAccount.token_mint ? vaultAccount.token_mint.toString() : null,
+        authority: vaultAccount.authority ? vaultAccount.authority.toString() : null,
+        metadataUri: vaultAccount.metadataUri || vaultAccount.metadata_uri || null,
+        totalSupply: vaultAccount.totalSupply ? vaultAccount.totalSupply.toString() :
+                    (vaultAccount.total_supply ? vaultAccount.total_supply.toString() : "0"),
+        isFractionalized: vaultAccount.isFractionalized !== undefined ? vaultAccount.isFractionalized :
+                         (vaultAccount.is_fractionalized !== undefined ? vaultAccount.is_fractionalized : false),
+        buyoutStatus: vaultAccount.buyoutStatus !== undefined ? vaultAccount.buyoutStatus :
+                     (vaultAccount.buyout_status !== undefined ? vaultAccount.buyout_status : 0),
+        tokenMint: vaultAccount.tokenMint ? vaultAccount.tokenMint.toString() :
+                  (vaultAccount.token_mint ? vaultAccount.token_mint.toString() : null),
       },
     };
   } catch (error) {
